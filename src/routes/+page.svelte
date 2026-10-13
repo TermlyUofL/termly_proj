@@ -20,7 +20,7 @@
 
     </div>
     <div class="calender_scroll">
-        <button class="btn-white"> &lt </button> Schedule <!-- PLACE HOLDER var schedule need to change based on buttons and genrated number if schecules-->
+        <button class="btn-white"> &lt </button> <p>Schedule</p> <!-- PLACE HOLDER var schedule need to change based on buttons and genrated number if schecules-->
         <button class="btn-white"> &gt </button>
     </div>
     </div>
@@ -36,9 +36,10 @@
             <div class="cell"></div>
         {/each}
     {/each}
+    <div class="calender_bottomtext">
     <h3>Online Classes</h3>
     <p class="sub1">COURSES X</p> <!-- Variable needed for courses-->
-
+    </div>
     
         
     </div>
@@ -53,6 +54,9 @@
     .calendar_text{
         background-color: white;
         padding-left: rem;
+        margin: 1rem;
+        border-radius: 0.5rem;
+
         
     }
     .calender_toptext{
@@ -64,13 +68,35 @@
     .calender_lefttoptext{
         max-width: 150px;
         max-height: 100px;
+        flex-shrink: 0;
+        white-space: nowrap;
+        margin-left: 1rem;
 
+    }
+    .calender_toptext h2{
+        margin: 0;
+        font-size: 1.5rem;
+    }
+    .calender_toptext .sub{
+        margin: 0;
     }
     .calender_middletoptext{
         max-width: 150px;
         max-height: 100px;
         text-align: center;
         color: #c62828;
+    }
+    .calender_bottomtext h3{
+        margin: 0;
+        font-size: 1rem;
+        white-space: nowrap;
+       
+    }
+    .calender_bottomtext .sub1{
+        margin: 0;
+        font-size: 0.65rem;
+        font-weight: 600;
+        white-space: nowrap
     }
     .btn-red{
         background-color: #c62828;
@@ -84,6 +110,12 @@
         display: flex;
         align-items: center;
         gap: 1rem;
+        
+    }
+    .calender_scroll p{
+        margin: 0;
+        font-weight: bold;
+        font-size: 1rem;
     }
     .btn-white{
         width: 32px;
