@@ -1,6 +1,11 @@
 
 <script>  
     import { subjects } from '$lib/subjects.js';
+    import { onMount } from 'svelte';
+    // local storge 
+    onMount(() => {
+    applyFilters();
+    });
 // This is the script section for the calendar   
     const days = [ 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const hours = [ '7:00AM', '8:00AM', '9:00AM', '10:00AM', '11:00AM', '12:00PM', '1:00PM', '2:00PM', '3:00PM', '4:00PM', '5:00PM', '6:00PM', '7:00PM', '8:00PM'];
@@ -24,31 +29,31 @@
     
     // Thsi is function for applying the search filters and fetching the results from the API
     async function applyFilters() {
-        const params = new URLSearchParams();
-        if (search.trim()) params.set('q', search.trim());
-        if (subject !== 'All') params.set('subject', subject);
-        if (session !== 'All') params.set('session', session);
-        if (mode !== 'All') params.set('mode', mode);
-        if (career !== 'All') params.set('career', career);
-        if (prereq) params.set('hasPreReq', 'true');
+    const params = new URLSearchParams();
+    if (search.trim()) params.set('q', search.trim());
+    if (subject !== 'All') params.set('subject', subject);
+    if (session !== 'All') params.set('session', session);
+    if (mode !== 'All') params.set('mode', mode);
+    if (career !== 'All') params.set('career', career);
+    if (prereq) params.set('has_prereq', 'yes');          // changed
 
-        loading = true;
-        errorMsg = '';
-        // This is the fetch request to the API to get the courses based on the filters
-        try {
-            const res = await fetch(`/api/courses?${params}`);
-            const data = await res.json();
-            if (res.ok) {
-                results = data;
-            } else {
-                errorMsg = data.error;
-                results = [];
-            }
-        } catch {
-            errorMsg = 'Could not reach the server';
+    loading = true;
+    errorMsg = '';
+    // This is the fetch request to the API to get the courses based on the filters
+    try {
+        const res = await fetch(`/api/courses?${params}`);
+        const data = await res.json();
+        if (res.ok) {
+            results = data.courses;                        // changed
+        } else {
+            errorMsg = data.error;
+            results = [];
         }
-        loading = false;
+    } catch {
+        errorMsg = 'Could not reach the server';
     }
+    loading = false;
+}
 
     
     let courses = $state([]);
@@ -97,6 +102,188 @@
     excluded = all;
     }
 
+
+    const dayCode = { Monday: 'M', Tuesday: 'T', Wednesday: 'W', Thursday: 'Th', Friday: 'F' };
+
+function hourNumber(label) {
+    const [, h, , ap] = label.match(/(\d+):(\d+)(AM|PM)/);
+    return (Number(h) % 12) + (ap === 'PM' ? 12 : 0);
+}
+
+function fmt(n) {
+    return String(n).padStart(2, '0') + ':00';
+}
+
+function getExcludedTimes() {
+    const out = [];
+    for (const day of days) {
+        let start = null;
+        for (const hour of hours) {
+            const isRed = excluded[`${day}-${hour}`];
+            const n = hourNumber(hour);
+            if (isRed && start === null) start = n;
+            if (!isRed && start !== null) {
+                out.push({ day: dayCode[day], start: fmt(start < 8 ? 0 : start), end: fmt(n) });
+                start = null;
+            }
+        }
+        if (start !== null) {
+            const last = hourNumber(hours[hours.length - 1]);
+            out.push({ day: dayCode[day], start: fmt(start < 8 ? 0 : start), end: fmt(last + 1) });
+        }
+    
+    }
+return out;
+}
+
+// ---- turn backend sections into calendar blocks ----
+const dayNames = { M: 'Monday', T: 'Tuesday', W: 'Wednesday', R: 'Thursday', Tr: 'Thursday', Th: 'Thursday', F: 'Friday' };
+
+// "M W F" -> ['Monday','Wednesday','Friday'],  "T Tr" -> ['Tuesday','Thursday']
+function toDays(meetingDays) {
+    const out = [];
+    for (const token of meetingDays.split(/\s+/).filter(Boolean)) {
+        if (token === 'TR') out.push('Tuesday', 'Thursday');
+        else if (dayNames[token]) out.push(dayNames[token]);
+    }
+    return out;
+}
+
+// "14:20" -> 14.333
+function toHours(t) {
+    const [h, m] = t.split(':').map(Number);
+    return h + m / 60;
+}
+
+// "14:20" -> "2:20 PM"
+function fmtClock(t) {
+    const [h, m] = t.split(':').map(Number);
+    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+}
+
+// one section can meet on several days, so it makes one block per day
+function sectionToBlocks(s) {
+    return toDays(s.meeting_days).map(day => ({
+        code: s.course_code,
+        name: s.course_name,
+        day,
+        start: toHours(s.start_time),
+        end: toHours(s.end_time),
+        time: `${fmtClock(s.start_time)} – ${fmtClock(s.end_time)}`,
+        room: s.section_location,
+        instructor: s.instructor_name
+    }));
+}
+
+// ---- generated schedules ----
+let schedules = $state([]);
+let current = $state(0);
+let problems = $state([]);
+let generating = $state(false);
+
+let currentSchedule = $derived(schedules[current] ?? null);
+let schedule = $derived(currentSchedule ? currentSchedule.calendar.flatMap(sectionToBlocks) : []);
+let onlineSections = $derived(currentSchedule ? currentSchedule.online : []);
+
+function nextSchedule() {
+    if (schedules.length) current = (current + 1) % schedules.length;
+}
+
+function prevSchedule() {
+    if (schedules.length) current = (current - 1 + schedules.length) % schedules.length;
+}
+
+async function generateSchedules() {
+    if (courses.length === 0) {
+        problems = ['Add at least one course to the plan first.'];
+        return;
+    }
+
+    generating = true;
+    problems = [];
+    schedules = [];          // clear the old result so a failure can't look like success
+    current = 0;
+
+    try {
+        const body = {
+            course_codes: courses.map(c => c.course_code),
+            excluded_times: getExcludedTimes()
+        };
+        console.log('sending', body);
+
+        const res = await fetch('/api/schedules/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        console.log('got', res.status, data);
+
+        if (res.ok) {
+            schedules = data.schedules;
+            problems = data.problems;
+        } else {
+            problems = [data.error];
+        }
+    } catch (err) {
+        console.log('generate failed', err);
+        problems = ['Could not reach the server'];
+    }
+
+    generating = false;
+}
+    function blocksAt(day, hour) {
+        return schedule.filter(b => b.day === day && Math.floor(b.start) === hourNumber(hour));
+    }
+    let totalCredits = $derived(courses.reduce((sum, c) => sum + (c.credit || 0), 0));
+    let favorites = $state([]);
+    let favCounter = 1;
+
+    function addFavorite() {
+        if (!currentSchedule) return;
+        const key = currentSchedule.crns.join(',');
+        if (favorites.some(f => f.key === key)) return;    // already saved
+        favorites = [...favorites, { key, name: `Schedule${favCounter++}`, schedule: currentSchedule }];
+    }
+
+    function removeFavorite(key) {
+        favorites = favorites.filter(f => f.key !== key);
+    }
+
+    function confirmFavorite(fav) {
+        schedules = [fav.schedule];
+        current = 0;
+    }
+    // ---- save and load (localStorage) ----
+    let loaded = false;
+
+    // runs once, when the page opens in the browser
+    onMount(() => {
+        const savedPlan = localStorage.getItem('plan');
+        if (savedPlan) courses = JSON.parse(savedPlan);
+
+        const savedExcluded = localStorage.getItem('excluded');
+        if (savedExcluded) excluded = JSON.parse(savedExcluded);
+
+        const savedFavorites = localStorage.getItem('favorites');
+        if (savedFavorites) favorites = JSON.parse(savedFavorites);
+
+        loaded = true;
+    });
+
+    // runs again whenever any of the three changes
+    $effect(() => {
+        const planText = JSON.stringify(courses);
+        const excludedText = JSON.stringify(excluded);
+        const favoritesText = JSON.stringify(favorites);
+
+        if (!loaded) return;
+        localStorage.setItem('plan', planText);
+        localStorage.setItem('excluded', excludedText);
+        localStorage.setItem('favorites', favoritesText);
+    });
+
+
 </script>
 
 
@@ -117,38 +304,66 @@
     <div class="calender_righttoptext">  
         <button class="btn-red" onclick={excludeAll}>Exclude all</button>
         <button class="btn-red" onclick={resetAll}>Reset</button>
-        <button class="btn-red">Favorite</button>
+        <button class="btn-red" onclick={addFavorite}>Favorite</button>
 
     </div>
     <div class="calender_scroll">
-        <button class="btn-white"> &lt; </button> <p>Schedule</p> <!-- PLACE HOLDER var schedule need to change based on buttons and genrated number if schecules-->
-        <button class="btn-white"> &gt; </button>
+        <button class="btn-white" onclick={prevSchedule}>&lt;</button>
+        <p>{schedules.length ? `Schedule ${current + 1} of ${schedules.length}` : 'No schedules'}</p>
+        <button class="btn-white" onclick={nextSchedule}>&gt;</button>
     </div>
+    
     </div>
-   
+    {#each problems as p}
+    <p class="hint">
+        {typeof p === 'string' ? p : `${p.course_code}: ${p.reason}`}
+    </p>
+    {/each} 
     <div class="calendar">  <!-- This is the calendar grid -->
         <div class="corner"></div> <!-- This is the corner cell -->
         {#each days as day}
             <div class="day">{day}</div>
         {/each}
 
-        {#each hours as hour}
-            <div class="hour">{hour}</div>
-            {#each days as day}
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
+    {#each hours as hour}
+        <div class="hour">{hour}</div>
+        {#each days as day}
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
+        <div
+            class="cell"
+            class:excluded={excluded[`${day}-${hour}`]}
+            onmousedown={() => startDrag(day, hour)}
+            onmouseenter={() => dragOver(day, hour)}
+        >
+            {#each blocksAt(day, hour) as b}
                 <div
-                    class="cell"
-                    class:excluded={excluded[`${day}-${hour}`]}
-                    onmousedown={() => startDrag(day, hour)}
-                    onmouseenter={() => dragOver(day, hour)}
-                ></div>
+                    class="class_block"
+                    style="top: {(b.start % 1) * 100}%; height: {(b.end - b.start) * 100}%;"
+                >
+                    <p class="block_title">{b.code} – {b.name}</p>
+                    <p class="block_info">{b.time}</p>
+                    <p class="block_info">{b.room}</p>
+                    <p class="block_info">{b.instructor}</p>
+                </div>
             {/each}
+        </div>
         {/each}
+    {/each}
     </div>
     <div class="calender_bottomtext">
-    <h3>Online Classes</h3>
-    <p class="sub1">COURSES X</p> <!-- Variable needed for courses-->
-    </div>
+  <h3>Online Classes</h3>
+  <p class="sub1">COURSES ({onlineSections.length})</p>
+
+  <div class="online_list">
+    {#each onlineSections as s}
+      <div class="online_card">
+        <p class="online_code">{s.course_code} {s.section_type}</p>
+        <p class="online_text">{s.course_name} ({s.credit} cr)</p>
+        <p class="online_text">{s.instructor_name}</p>
+      </div>
+    {/each}
+  </div>
+</div>
     
         
     
@@ -168,31 +383,31 @@
  </label>
 
  <label>Session:
-    <select bind:value={session}>
-      <option>All</option>
-      <option>First Half</option>
-      <option>Second Half</option>
-      <option>Regular Full</option>
-      <option>Special</option>
-    </select>
-  </label>
+  <select bind:value={session}>
+    <option value="All">All</option>
+    <option value="First Half">First Half</option>
+    <option value="Second Half">Second Half</option>
+    <option value="Regular Full">Regular Full</option>
+    <option value="Special">Special</option>
+  </select>
+</label>
 
   <label>Mode:
-    <select bind:value={mode}>
+  <select bind:value={mode}>
     <option value="All">All</option>
-    <option value="in person">In Person</option>
-    <option value="online">Online</option>
-    <option value="hybrid">Hybrid</option>
-    </select>
-  </label>
+    <option value="In Person">In Person</option>
+    <option value="Online Asynchronous">Online Asynchronous</option>
+    <option value="Online Synchronous">Online Synchronous</option>
+  </select>
+</label>
 
   <label>Career:
-    <select bind:value={career}>
-      <option>All</option>
-      <option>undergraduate</option>
-      <option>graduate</option>
-    </select>
-  </label>
+  <select bind:value={career}>
+    <option value="All">All</option>
+    <option value="Undergraduate">Undergraduate</option>
+    <option value="Graduate">Graduate</option>
+  </select>
+</label>
 
   <label><input type="checkbox" bind:checked={prereq} /> Pre-req needed</label>
 
@@ -216,7 +431,7 @@
   <div class="cards">
     {#each results as course}
       <div class="course-card">
-        <p class="meta">{course.course_code} • {course.course_session}</p>
+        <p class="meta">{course.course_code} • {course.credit} Credits</p>
         <p class="title">{course.course_name}</p>
         <button class="btn-red" onclick={() => addToPlan(course)}>
           Add to Schedule Plan
@@ -230,7 +445,7 @@
 </div>
 
 <!-- This is the section for the schedule plan -->
-
+<div class="side_col">
 <section class="schedule_plan">
   <h3>Schedule Plan</h3>
   <p class="sub1">Semester Draft</p>
@@ -238,7 +453,8 @@
 
   <div class="stats">
     <div class="total_credits">
-      <p class="stat_label">TOTAL CREDITS</p>
+        <p class="stat_label">TOTAL CREDITS</p>
+        <p class="stat_number red">{currentSchedule?.total_credits ?? 0}</p>
      
     </div>
     <div class="total_courses">
@@ -254,16 +470,37 @@
       <div class="plan_row">
         <div class="plan_text">
           <p class="plan_code">{course.course_code}</p>
-          <p class="plan_name">{course.course_name}</p>
+          <p class="plan_name">{course.course_name} ({course.credit} cr)</p>
         </div>
         <button class="plan_remove" onclick={() => removeFromPlan(course.course_code)}>⊗</button>
       </div>
     {/each}
   </div>
 
-  <button class="btn-red generate">Generate</button>
+  <button class="btn-red generate" onclick={generateSchedules} disabled={generating}>
+    {generating ? 'Generating...' : 'Generate'}
+</button>
 </section>
 
+<section class="favorites">
+  <h3>Favorites</h3>
+  <p class="fav_label">FAVORITE SCHEDULES ({favorites.length})</p>
+
+
+    <div class="fav_list">
+        {#each favorites as fav}
+            <div class="fav_item">
+                <div class="fav_row">
+                    <p class="fav_name">{fav.name}</p>
+                    <button class="btn-red" onclick={() => confirmFavorite(fav)}>Confirm</button>
+                </div>
+                <button class="plan_remove" onclick={() => removeFavorite(fav.key)}>⊗</button>
+            </div>
+        {/each}
+    </div>
+
+</section>
+</div>
 </div>
 
 <style>
@@ -326,6 +563,11 @@
         text-align: center;
         margin-left: 2rem;
         color: #c62828;
+    }
+    .calendar_text .hint 
+    {
+    margin: 0.5rem 1rem;
+    font-size: 0.85rem;
     }
     .calender_bottomtext h3
     {
@@ -411,6 +653,7 @@
     }
     .hour
     {
+        height: 80px;
         font-size: 0.8rem;
         color: #6b7280;
         padding: 0.25rem 0.5rem;
@@ -422,9 +665,38 @@
         
         
     }
+
+    .class_block 
+    {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    z-index: 1;
+    box-sizing: border-box;
+    background: #efefef;
+    border-radius: 4px;
+    padding: 0.3rem 0.4rem;
+    overflow:hidden ;
+    pointer-events: none;
+    }
+
+    .block_title 
+    {
+    margin: 0;
+    font-size: 0.7rem;
+    font-weight: 700;
+    }
+
+    .block_info 
+    {
+    margin: 0;
+    font-size: 0.6rem;
+    color: #6b7280;
+    }
     .cell
     {
-        height:40px;
+        height:80px;
+        position: relative;
         border-left: 1px solid #e5e7eb;
         border-top: 1px solid #e5e7eb;
         border-right: 1px solid #e5e7eb;
@@ -438,8 +710,43 @@
         background: rgba(198, 40, 40, 0.45);
     }
 
-/* This is the section for the search results */
+    .online_list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
 
+    .online_card {
+    background: #f4f4f4;
+    border-radius: 6px;
+    padding: 1rem;
+    min-width: 0;
+    max-width: 150px;
+    margin-bottom: 0.5rem;
+    margin-left: 0.5rem;
+    }
+
+    .online_card p {
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    }
+
+    .online_code {
+    font-weight: 700;
+    font-size: 0.95rem;
+    }
+
+    .online_text {
+    font-size: 0.85rem;
+    color: #6b7280;
+    margin-top: 0.2rem;
+    }
+
+/* This is the section for the search results */
+/* Need to fix width to match calender */
     .results { 
         margin-top: 1rem; 
     }
@@ -623,6 +930,61 @@
     {
   display: block;
   margin: 1rem auto 0;
+    }
+
+    .favorites 
+    {
+        background: white;
+        padding: 1.25rem;
+        border-radius: 6px;
+        margin-top: 3rem;
+    }
+
+    .favorites h3 
+    {   
+        margin: 0 0 0.5rem;
+        font-size: 1rem;
+        color: #c62828;
+    }
+
+    .fav_label 
+    {
+        margin: 0 0 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 700;
+        color: #6b7280;
+    }
+
+    .fav_list 
+    {  
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .fav_item 
+    {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .fav_row 
+    {
+        flex: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        background: #f4f4f4;
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .fav_name 
+    {
+        margin: 0;
+        font-weight: 700;
+        font-size: 0.85rem;
     }
 
 </style>
