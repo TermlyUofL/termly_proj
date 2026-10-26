@@ -418,7 +418,7 @@ async function generateSchedules() {
 <!-- This is the section for the search results -->
 <section class="results">
   <h3>Course Search Results</h3>
-  <p class="hint">Click on red class to see details about class</p>
+  <p class="hint">Click on class name to see details about class</p>
 
   {#if loading}
     <p>Searching...</p>
@@ -432,7 +432,7 @@ async function generateSchedules() {
     {#each results as course}
       <div class="course-card">
         <p class="meta">{course.course_code} • {course.credit} Credits</p>
-        <p class="title">{course.course_name}</p>
+        <a class="title" href="/course/{course.course_code}">{course.course_name}</a>
         <button class="btn-red" onclick={() => addToPlan(course)}>
           Add to Schedule Plan
         </button>
@@ -790,6 +790,11 @@ async function generateSchedules() {
     .title {
         margin: 0.25rem 0 0.75rem;
         font-weight: 700;
+        text-decoration: none;
+        color: inherit;
+    }
+    .title:hover{
+        color: #c62828
     }
 
     .course-card .btn-red 
