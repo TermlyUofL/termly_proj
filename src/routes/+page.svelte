@@ -2,6 +2,7 @@
 <script>  
     import { subjects } from '$lib/subjects.js';
     import { onMount } from 'svelte';
+    import SchedulePlan from '$lib/SchedulePlan.svelte';
     // local storge 
     onMount(() => {
     applyFilters();
@@ -62,6 +63,9 @@
     function addToPlan(course) {
         console.log('add', course.course_code);
         courses = [...courses, course];
+    }
+    function inPlan(course) {
+    return courses.some(c => c.course_code === course.course_code);
     }
     function removeFromPlan(courseCode) {
         console.log('remove', courseCode);
@@ -135,18 +139,21 @@ function getExcludedTimes() {
     }
 return out;
 }
-
 // ---- turn backend sections into calendar blocks ----
-const dayNames = { M: 'Monday', T: 'Tuesday', W: 'Wednesday', R: 'Thursday', Tr: 'Thursday', Th: 'Thursday', F: 'Friday' };
+const dayMap = {
+    M: 'Monday', T: 'Tuesday', W: 'Wednesday', R: 'Thursday', F: 'Friday',
+    Tu: 'Tuesday', Th: 'Thursday', Tr: 'Thursday'
+};
 
-// "M W F" -> ['Monday','Wednesday','Friday'],  "T Tr" -> ['Tuesday','Thursday']
+// "M W F", "MWF", "T Tr", "TR", "TuTh"  ->  list of day names
 function toDays(meetingDays) {
     const out = [];
     for (const token of meetingDays.split(/\s+/).filter(Boolean)) {
-        if (token === 'TR') out.push('Tuesday', 'Thursday');
-        else if (dayNames[token]) out.push(dayNames[token]);
+        for (const part of token.match(/Tu|Th|Tr|[MTWRF]/g) || []) {
+            out.push(dayMap[part]);
+        }
     }
-    return out;
+    return [...new Set(out)];
 }
 
 // "14:20" -> 14.333
@@ -193,45 +200,77 @@ function prevSchedule() {
     if (schedules.length) current = (current - 1 + schedules.length) % schedules.length;
 }
 
+let hasGenerated = false;   // plain variable: true after the first Generate
+let requestId = 0;          // plain variable: numbers each request
+
 async function generateSchedules() {
     if (courses.length === 0) {
         problems = ['Add at least one course to the plan first.'];
         return;
     }
 
+    hasGenerated = true;
+    const myId = ++requestId;       // this request's number
     generating = true;
     problems = [];
-    schedules = [];          // clear the old result so a failure can't look like success
-    current = 0;
 
     try {
-        const body = {
-            course_codes: courses.map(c => c.course_code),
-            excluded_times: getExcludedTimes()
-        };
-        console.log('sending', body);
-
         const res = await fetch('/api/schedules/generate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body)
+            body: JSON.stringify({
+                course_codes: courses.map(c => c.course_code),
+                excluded_times: getExcludedTimes()
+            })
         });
         const data = await res.json();
-        console.log('got', res.status, data);
+
+        // A newer request has started since this one, so ignore this answer.
+        if (myId !== requestId) return;
 
         if (res.ok) {
             schedules = data.schedules;
             problems = data.problems;
+            current = 0;
         } else {
+            schedules = [];
             problems = [data.error];
         }
-    } catch (err) {
-        console.log('generate failed', err);
+    } catch {
+        if (myId !== requestId) return;
+        schedules = [];
         problems = ['Could not reach the server'];
     }
 
     generating = false;
 }
+
+let regenTimer;
+
+$effect(() => {
+    // Reading these two makes Svelte watch them.
+    JSON.stringify(excluded);
+    courses.map(c => c.course_code);
+
+    // Don't run until the student has pressed Generate once.
+    if (!hasGenerated) return;
+
+    // Wait 400 ms after the last change, so dragging across many cells
+    // sends one request instead of dozens.
+    clearTimeout(regenTimer);
+    regenTimer = setTimeout(() => {
+        if (courses.length === 0) {
+            requestId++;            // cancel any request still on its way
+            schedules = [];
+            problems = [];
+            generating = false;
+        } else {
+            generateSchedules();
+        }
+    }, 400);
+
+    return () => clearTimeout(regenTimer);
+});
     function blocksAt(day, hour) {
         return schedule.filter(b => b.day === day && Math.floor(b.start) === hourNumber(hour));
     }
@@ -282,6 +321,15 @@ async function generateSchedules() {
         localStorage.setItem('excluded', excludedText);
         localStorage.setItem('favorites', favoritesText);
     });
+
+    function sectionTypes(course) {
+    return [...new Set((course.sections || []).map(s => s.section_type))].join(', ');
+}
+
+    // 'CSE350' -> 'CSE 350' (optional: puts the space back, like your mockup)
+    function prettyCode(code) {
+        return code.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
+    }
 
 
 </script>
@@ -433,8 +481,12 @@ async function generateSchedules() {
       <div class="course-card">
         <p class="meta">{course.course_code} • {course.credit} Credits</p>
         <a class="title" href="/course/{course.course_code}">{course.course_name}</a>
-        <button class="btn-red" onclick={() => addToPlan(course)}>
-          Add to Schedule Plan
+        <button
+        class="btn-red"
+        onclick={() => addToPlan(course)}
+        disabled={inPlan(course)}
+    >
+            {inPlan(course) ? 'In Schedule Plan' : 'Add to Schedule Plan'}
         </button>
       </div>
     {/each}
@@ -446,41 +498,7 @@ async function generateSchedules() {
 
 <!-- This is the section for the schedule plan -->
 <div class="side_col">
-<section class="schedule_plan">
-  <h3>Schedule Plan</h3>
-  <p class="sub1">Semester Draft</p>
-  <p class="sub1">Pick classes and press generate different schedules.</p>
-
-  <div class="stats">
-    <div class="total_credits">
-        <p class="stat_label">TOTAL CREDITS</p>
-        <p class="stat_number red">{currentSchedule?.total_credits ?? 0}</p>
-     
-    </div>
-    <div class="total_courses">
-      <p class="stat_label">COURSES</p>
-      <p class="stat_number">{courses.length}</p>
-    </div>
-  </div>
-
-  <p class="list_label">COURSES ({courses.length})</p>
-
-  <div class="course_list">
-    {#each courses as course}
-      <div class="plan_row">
-        <div class="plan_text">
-          <p class="plan_code">{course.course_code}</p>
-          <p class="plan_name">{course.course_name} ({course.credit} cr)</p>
-        </div>
-        <button class="plan_remove" onclick={() => removeFromPlan(course.course_code)}>⊗</button>
-      </div>
-    {/each}
-  </div>
-
-  <button class="btn-red generate" onclick={generateSchedules} disabled={generating}>
-    {generating ? 'Generating...' : 'Generate'}
-</button>
-</section>
+<SchedulePlan plan={courses} onremove={removeFromPlan} ongenerate={generateSchedules} {generating} />
 
 <section class="favorites">
   <h3>Favorites</h3>
@@ -653,7 +671,7 @@ async function generateSchedules() {
     }
     .hour
     {
-        height: 80px;
+        height: 100px;
         font-size: 0.8rem;
         color: #6b7280;
         padding: 0.25rem 0.5rem;
@@ -695,7 +713,7 @@ async function generateSchedules() {
     }
     .cell
     {
-        height:80px;
+        height:100px;
         position: relative;
         border-left: 1px solid #e5e7eb;
         border-top: 1px solid #e5e7eb;
@@ -710,14 +728,16 @@ async function generateSchedules() {
         background: rgba(198, 40, 40, 0.45);
     }
 
-    .online_list {
+    .online_list 
+    {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 0.75rem;
   margin-top: 0.75rem;
-}
+    }
 
-    .online_card {
+    .online_card 
+    {
     background: #f4f4f4;
     border-radius: 6px;
     padding: 1rem;
@@ -727,19 +747,22 @@ async function generateSchedules() {
     margin-left: 0.5rem;
     }
 
-    .online_card p {
+    .online_card p 
+    {
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     }
 
-    .online_code {
+    .online_code 
+    {
     font-weight: 700;
     font-size: 0.95rem;
     }
 
-    .online_text {
+    .online_text 
+    {
     font-size: 0.85rem;
     color: #6b7280;
     margin-top: 0.2rem;
@@ -747,7 +770,8 @@ async function generateSchedules() {
 
 /* This is the section for the search results */
 /* Need to fix width to match calender */
-    .results { 
+    .results 
+    { 
         margin-top: 1rem; 
     }
 
@@ -851,91 +875,17 @@ async function generateSchedules() {
     }
 
 /* This is the section for the schedule plan */
-    .schedule_plan 
+    
+
+    .plan_remove 
     {
-    margin-top: 1rem;
-    background: white;
-    padding: 1.25rem;
-    border-radius: 6px;
+        background: none;
+        border: none;
+        font-size: 1.2rem;
+        color: #555;
+        cursor: pointer;
     }
 
-    .schedule_plan h3 
-    {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-    font-weight: 700;
-    }
-
-    .schedule_plan .sub1 
-    {
-  margin: 0 0 0.25rem;
-  font-size: 0.8rem;
-  color: #6b7280;
-    }
-
-    .stats 
-    {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  margin: 1rem 0;
-    }
-
-    .total_credits,
-    .total_courses 
-    {
-  background: #f4f4f4;
-  border-radius: 6px;
-  padding: 0.75rem;
-    }
-
-    .stat_label 
-    {
-  margin: 0;
-  font-size: 0.7rem;
-  font-weight: 700;
-  color: #6b7280;
-    }
-
-    .stat_number 
-    {
-  margin: 0.25rem 0 0;
-  font-size: 1.6rem;
-  font-weight: 800;
-  color: #111;
-    }
-
-
-    .list_label 
-    {
-  margin: 0 0 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: #6b7280;
-    }
-
-    .course_list 
-    {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-    }
-
-    .plan_row 
-    {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: #f4f4f4;
-  border-radius: 6px;
-  padding: 1rem;
-    }
-
-    .generate 
-    {
-  display: block;
-  margin: 1rem auto 0;
-    }
 
     .favorites 
     {
@@ -992,4 +942,9 @@ async function generateSchedules() {
         font-size: 0.85rem;
     }
 
+    @media (max-width: 900px) {
+            .layout {
+                grid-template-columns: 1fr;
+            }
+        }
 </style>

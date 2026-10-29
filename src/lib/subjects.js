@@ -1,14 +1,5 @@
 // src/lib/subjects.js
-// Each item: code is what you SEND to the backend, name is what the student SEES.
-// Transcribed from screenshots. Several alphabet sections were not in the
-// screenshots (see gaps below), so this list is incomplete.
-//
-// Missing ranges to add after scrolling the real dropdown:
-//   - between "Cardiovascular and Thoracic Surgery" and "Chemical Engineering"
-//   - between "Graduate Interdisciplinary" and "Nursing"  (History, Mathematics,
-//     Mechanical Engineering, Marketing, Music, etc. live here)
-//   - between "Sport Administration" and "Surgery"
-
+// Subject for fil
 export const subjects = [
   { code: 'ACCT', name: 'Accounting' },
   { code: 'AIRS', name: 'Aerospace Studies' },
@@ -82,10 +73,51 @@ export const subjects = [
   { code: 'GS', name: 'Graduate Interdisciplinary' },
   { code: 'GR', name: 'Greek' },
   { code: 'HSS', name: 'Health and Sport Science ' },
-  
+  { code: 'HPE', name: 'Health Professions Education' },
+  { code: 'HIST', name: 'History' },
+  { code: 'HON', name: 'Honors' },
+  { code: 'HOSP', name: 'Hospitality Management' },
+  { code: 'HUM', name: 'Humanities' },
+  { code: 'INDV', name: 'Individualized Major' },
+  { code: 'ISE', name: 'Industrial and Systems Engineering' },
+  { code: 'IE', name: 'Industrial Engineering' },
+  { code: 'IDEP', name: 'Interdepartmental Courses' },
+  { code: 'ITP', name: 'Interpreter Training' },
+  { code: 'JAPN', name: 'Japanese Language' },
+  { code: 'JPST', name: 'Japanese Studies' },
+  { code: 'LAT', name: 'Latin' },
+  { code: 'LALS', name: 'Latin American and Latino Studies' },
+  { code: 'LAW', name: 'Law' },
+  { code: 'LCE', name: 'LCE' },
+  { code: 'LBST', name: 'Liberal Studies' },
+  { code: 'LING', name: 'Linguistics' },
+  { code: 'MGMT', name: 'Management' },
+  { code: 'ANLY', name: 'Managerial Analytics' },
+  { code: 'MKT', name: 'Marketing' },
+  { code: 'MBA', name: 'Master of Business Administration' },
+  { code: 'MENG', name: 'Master of Engineering Residency' },
+  { code: 'MAST', name: 'Masters Candidacy' },
+  { code: 'MESE', name: 'Materials and Energy Science and Engineering' },
   { code: 'MATH', name: 'Mathematics' },
-  // Miss strat at Health Prof
-  
+  { code: 'ME', name: 'Mechanical Engineering' },
+  { code: 'MED', name: 'Medicine' },
+  { code: 'MIVY', name: 'Metroversity - Ivy Tech Community College' },
+  { code: 'MBEC', name: 'Metroversity-Bellarmine University' },
+  { code: 'MIUS', name: 'Metroversity-Indiana University SouthEast' },
+  { code: 'MJCC', name: 'Metroversity-Jefferson Community College' },
+  { code: 'MLPS', name: 'Metroversity-Louisville Presbyterian Seminary' },
+  { code: 'MSBS', name: 'Metroversity-Southern Baptist Seminary' },
+  { code: 'MSPC', name: 'Metroversity-Spalding University' },
+  { code: 'MBIO', name: 'Microbiology & Immunology' },
+  { code: 'MILS', name: 'Military Science' },
+  { code: 'M L', name: 'Modern Languages' },
+  { code: 'MUS', name: 'Music' },
+  { code: 'MUSA', name: 'Music Applied' },
+  { code: 'MUED', name: 'Music Education' },
+  { code: 'MUH', name: 'Music History' },
+  { code: 'MUTH', name: 'Music Therapy' },
+  { code: 'NSUR', name: 'Neurological Surgery' },
+  { code: 'NEUR', name: 'Neurology' },
   { code: 'NURS', name: 'Nursing' },
   { code: 'OB&G', name: 'Obstetrics and Gynecology' },
   { code: 'OPHT', name: 'Ophthalmology' },
