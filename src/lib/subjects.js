@@ -1,5 +1,5 @@
 // src/lib/subjects.js
-// Subject for fil
+// Subject codes and their full names, used for the Subject filter dropdown.
 export const subjects = [
   { code: 'ACCT', name: 'Accounting' },
   { code: 'AIRS', name: 'Aerospace Studies' },

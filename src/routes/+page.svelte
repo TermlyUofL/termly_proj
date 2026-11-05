@@ -15,7 +15,6 @@
     // ===================================================================
     // When the page first opens, run a search with the default filters
     // (everything set to "All") so the results list isn't empty.
-    // local storge 
     onMount(() => {
     applyFilters();
     });
@@ -130,7 +129,6 @@
     // "Add to Schedule Plan" button. [...courses, course] builds a new list
     // with the old courses plus the new one.
     function addToPlan(course) {
-        console.log('add', course.course_code);
         courses = [...courses, course];
     }
     // true if this course is already in the plan (used to disable its
@@ -141,7 +139,6 @@
     // Keeps every course except the one with this code. Called by the
     // remove button in the SchedulePlan sidebar.
     function removeFromPlan(courseCode) {
-        console.log('remove', courseCode);
         courses = courses.filter(c => c.course_code !== courseCode);
     }
 
@@ -251,7 +248,6 @@ return out;
 // The server describes each class section with text, like
 // meeting_days "MWF" and start_time "09:00". The helpers below turn
 // that into "blocks" the calendar grid knows how to draw.
-// ---- turn backend sections into calendar blocks ----
 // Maps every day abbreviation the server might use to a full day name.
 // Different data spells Tuesday and Thursday in different ways.
 const dayMap = {
@@ -304,7 +300,6 @@ function sectionToBlocks(s) {
 // ===================================================================
 // GENERATED SCHEDULES
 // ===================================================================
-// ---- generated schedules ----
 // schedules:  every schedule the server came up with. Each one is a
 //             combination of sections whose times don't clash.
 // current:    which schedule is being shown (0 = the first one).
@@ -477,7 +472,6 @@ $effect(() => {
     // localStorage is a small storage area in the browser that survives page
     // refreshes. It remembers the plan, the red cells and the favorites.
     // It can only store text, so JSON.stringify saves and JSON.parse loads.
-    // ---- save and load (localStorage) ----
     // loaded stays false until the saved data has been read, so the effect
     // below doesn't overwrite it with empty values first.
     let loaded = false;
@@ -677,8 +671,6 @@ $effect(() => {
 <section class="results">
   <h3>Course Search Results</h3>
   <p class="hint">Showing {results.length} of {total} courses</p>
-
-    <!-- the cards loop stays as it is -->
 
     {#if results.length < total}
         <button class="btn-red" onclick={loadMore} disabled={loading}>Load more</button>
