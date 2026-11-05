@@ -662,10 +662,6 @@
 <section class="results">
   <h3>Course Search Results</h3>
   <p class="hint">Showing {results.length} of {total} courses</p>
-
-    {#if results.length < total}
-        <button class="btn-red" onclick={loadMore} disabled={loading}>Load more</button>
-    {/if}
   <p class="hint">Click on class name to see details about class</p>
 
   <!-- Status message: searching, an error, or nothing found. -->
@@ -694,6 +690,11 @@
       </div>
     {/each}
   </div>
+
+  <!-- Only shown while there are more matching courses than are loaded. -->
+  {#if results.length < total}
+    <button class="btn-red load_more" onclick={loadMore} disabled={loading}>Load more</button>
+  {/if}
 
 </section>
 
@@ -1091,7 +1092,13 @@
         color: #c62828
     }
 
-    .course-card .btn-red 
+    .load_more
+    {
+        display: block;
+        margin: 1rem auto;
+    }
+
+    .course-card .btn-red
     {
         margin-top: auto;
          width: 100%;
