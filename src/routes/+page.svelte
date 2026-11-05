@@ -434,9 +434,6 @@ $effect(() => {
     function blocksAt(day, hour) {
         return schedule.filter(b => b.day === day && Math.floor(b.start) === hourNumber(hour));
     }
-    // Adds up the credits of every course in the plan
-    // (`|| 0` counts a missing credit value as 0).
-    let totalCredits = $derived(courses.reduce((sum, c) => sum + (c.credit || 0), 0));
     // ===================================================================
     // FAVORITES
     // ===================================================================
@@ -506,21 +503,6 @@ $effect(() => {
         localStorage.setItem('excluded', excludedText);
         localStorage.setItem('favorites', favoritesText);
     });
-
-    // ===================================================================
-    // SMALL DISPLAY HELPERS
-    // ===================================================================
-    // Lists the different kinds of sections a course has, e.g. "Lecture, Lab".
-    function sectionTypes(course) {
-    return [...new Set((course.sections || []).map(s => s.section_type))].join(', ');
-}
-
-    // 'CSE350' -> 'CSE 350' (optional: puts the space back, like your mockup)
-    function prettyCode(code) {
-        return code.replace(/^([A-Za-z]+)(\d+)$/, '$1 $2');
-    }
-
-
 </script>
 
 
@@ -777,11 +759,8 @@ $effect(() => {
     .calendar_text
     {
         background-color: white;
-        padding-left: rem;
         margin: 1rem;
         border-radius: 0.5rem;
-
-        
     }
 
     .calender_toptext
@@ -811,10 +790,6 @@ $effect(() => {
     .calender_toptext .sub
     {
         margin: 0;
-    }
-
-    p.sub
-    {
         font-size: 0.8rem;
         color: #6b7280;
     }
@@ -873,7 +848,6 @@ $effect(() => {
         grid-template-columns: 70px repeat(5, 1fr);
         border-bottom: 1px solid #e5e7eb;
         padding: 10px;
-        padding-bottom: 10px;
     }
 
     .corner{
@@ -894,30 +868,21 @@ $effect(() => {
 
     .hour
     {
-        height: 100px;
-        font-size: 0.8rem;
-        color: #6b7280;
-        padding: 0.25rem 0.5rem;
         height: 40px;
         box-sizing: border-box;
+        padding: 0.25rem 0.5rem 0.25rem 15px;
+        font-size: 0.8rem;
+        color: #6b7280;
         border-left: 1px solid #e5e7eb;
-        text-align: top;
-        padding-left: 15px;
-        
-        
     }
 
     .cell
     {
-        height:100px;
+        height: 100px;
         position: relative;
-        border-left: 1px solid #e5e7eb;
-        border-top: 1px solid #e5e7eb;
-        border-right: 1px solid #e5e7eb;
-        border-bottom: 1px solid #e5e7eb;
+        border: 1px solid #e5e7eb;
         cursor: pointer;
         user-select: none;
-
     }
 
     .excluded 
@@ -970,18 +935,11 @@ $effect(() => {
     .calender_bottomtext .sub1
     {
         margin: 0;
+        padding-bottom: 10px;
         font-size: 0.65rem;
         font-weight: 600;
-        white-space: nowrap
-    }
-
-    p.sub1
-    {
-        font-size: 0.8rem;
         color: #6b7280;
-        padding-bottom: 10px;
-        font-weight: bold;
-        text-align: left;
+        white-space: nowrap;
     }
 
     .online_list 
