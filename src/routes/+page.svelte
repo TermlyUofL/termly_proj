@@ -1,5 +1,4 @@
-
-<script>  
+<script>
     // ===================================================================
     // IMPORTS
     // ===================================================================
@@ -10,31 +9,36 @@
     import { subjects } from '$lib/subjects.js';
     import { onMount } from 'svelte';
     import SchedulePlan from '$lib/SchedulePlan.svelte';
+
     // ===================================================================
-    // INITIAL SEARCH
+    // CONSTANTS
     // ===================================================================
-    // When the page first opens, run a search with the default filters
-    // (everything set to "All") so the results list isn't empty.
-    onMount(() => {
-    applyFilters();
-    });
-// ===================================================================
-// CALENDAR GRID SETUP
-// ===================================================================
-// This is the script section for the calendar   
     // The columns of the calendar (one per weekday).
-    const days = [ 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     // The rows of the calendar (one per hour, 7 AM to 8 PM).
-    const hours = [ '7:00AM', '8:00AM', '9:00AM', '10:00AM', '11:00AM', '12:00PM', '1:00PM', '2:00PM', '3:00PM', '4:00PM', '5:00PM', '6:00PM', '7:00PM', '8:00PM'];
-    
-// ===================================================================
-// SEARCH FILTERS
-// ===================================================================
-// This is the script section for the search filters
+    const hours = ['7:00AM', '8:00AM', '9:00AM', '10:00AM', '11:00AM', '12:00PM', '1:00PM', '2:00PM', '3:00PM', '4:00PM', '5:00PM', '6:00PM', '7:00PM', '8:00PM'];
+
+    // The server wants excluded times like { day: 'M', start: '09:00', end: '11:00' }.
+    // dayCode turns full day names into the short codes it expects.
+    const dayCode = { Monday: 'M', Tuesday: 'T', Wednesday: 'W', Thursday: 'Th', Friday: 'F' };
+
+    // Maps every day abbreviation the server might use to a full day name.
+    // Different data spells Tuesday and Thursday in different ways.
+    const dayMap = {
+        M: 'Monday', T: 'Tuesday', W: 'Wednesday', R: 'Thursday', F: 'Friday',
+        Tu: 'Tuesday', Th: 'Thursday', Tr: 'Thursday'
+    };
+
+    // ===================================================================
+    // STATE
+    // ===================================================================
+    // $state(...) makes a variable reactive: when it changes, Svelte
+    // re-draws any part of the page that uses it. Variables without
+    // $state are plain variables: changing them re-draws nothing.
+
+    // ---- Search filters ----
     // Each variable below is "bound" to one control in the filter bar, so
     // typing or choosing an option updates it automatically.
-    // $state(...) makes a variable reactive: when it changes, Svelte
-    // re-draws any part of the page that uses it.
     // 'All' means "don't filter on this".
     let search = $state('');
     let subject = $state('All');
@@ -43,10 +47,75 @@
     let career = $state('All');
     let prereq = $state(false);
 
-    // the real dropdown values, loaded from the backend
+    // The real dropdown values, loaded from the backend.
     let filterOptions = $state({ subjects: [], sessions: [], modes_of_instruction: [], careers: [] });
 
-    // subject codes from the backend, with names from subjects.js where we know them
+    // ---- Search results ----
+    // results:  the courses the server sent back for the current filters.
+    // loading:  true while waiting for the server (shows "Searching...").
+    // errorMsg: a message to show if the search failed.
+    // total:    how many courses match in total.
+    // page:     which page of results is loaded.
+    let results = $state([]);
+    let loading = $state(false);
+    let errorMsg = $state('');
+    let total = $state(0);
+    let page = $state(1);
+
+    // ---- Schedule plan ----
+    // courses: the courses the student has added to their plan (shown in
+    // the SchedulePlan sidebar). It is saved to localStorage.
+    let courses = $state([]);
+
+    // ---- Excluded times (click and drag) ----
+    // excluded:   the cells the student has painted red, stored like
+    //             { "Monday-9:00AM": true }. Red means "don't schedule me here".
+    // dragging:   true while the mouse button is held down on the calendar.
+    // paintValue: what the current drag does: true = paint red, false = erase.
+    let excluded = $state({});
+    let dragging = false;
+    let paintValue = true;
+
+    // ---- Generated schedules ----
+    // schedules:  every schedule the server came up with. Each one is a
+    //             combination of sections whose times don't clash.
+    // current:    which schedule is being shown (0 = the first one).
+    // problems:   messages shown above the calendar (e.g. a course that
+    //             couldn't fit).
+    // generating: true while waiting for the server.
+    let schedules = $state([]);
+    let current = $state(0);
+    let problems = $state([]);
+    let generating = $state(false);
+
+    // hasGenerated: true after the first Generate.
+    // requestId:    numbers each request, so late answers can be ignored.
+    // regenTimer:   the id of the waiting auto-regenerate setTimeout.
+    // These are plain variables on purpose: changing them shouldn't re-draw
+    // anything or re-run the auto-regenerate $effect.
+    let hasGenerated = false;
+    let requestId = 0;
+    let regenTimer;
+
+    // ---- Favorites ----
+    // favorites:  schedules saved with the "Favorite" button. Each one
+    //             looks like { key, name, schedule }.
+    // favCounter: used to name them Schedule1, Schedule2, ...
+    let favorites = $state([]);
+    let favCounter = 1;
+
+    // ---- Saving ----
+    // loaded stays false until the saved data has been read, so the save
+    // effect doesn't overwrite it with empty values first.
+    let loaded = false;
+
+    // ===================================================================
+    // DERIVED VALUES
+    // ===================================================================
+    // $derived(...) values recalculate automatically when the things they
+    // use change.
+
+    // Subject codes from the backend, with names from subjects.js where we know them.
     let subjectOptions = $derived(
         filterOptions.subjects.map(code => {
             const known = subjects.find(s => s.code === code);
@@ -54,35 +123,24 @@
         })
     );
 
-    onMount(async () => {
-        try {
-            const res = await fetch('/api/filters');
-            if (res.ok) filterOptions = await res.json();
-        } catch {
-            // if this fails, the dropdowns just show "All"
-        }
-    });
-    
-    // results:  the courses the server sent back for the current filters.
-    // loading:  true while waiting for the server (shows "Searching...").
-    // errorMsg: a message to show if the search failed.
-    let results = $state([]);
-    let loading = $state(false);
-    let errorMsg = $state('');
+    // currentSchedule: the schedule being shown (or null if there are none).
+    // schedule:        its in-person sections, turned into calendar blocks.
+    // onlineSections:  its online sections. They have no meeting time, so
+    //                  they are listed under the calendar instead of on it.
+    let currentSchedule = $derived(schedules[current] ?? null);
+    let schedule = $derived(currentSchedule ? currentSchedule.calendar.flatMap(sectionToBlocks) : []);
+    let onlineSections = $derived(currentSchedule ? currentSchedule.online : []);
 
-    
-    
-    // This is function for applying the search filters and fetching the results from the API
-    // How it works:
+    // ===================================================================
+    // SEARCH
+    // ===================================================================
+    // Fetches one page of courses matching the filters.
     //   1. Build a query string like "q=calc&subject=MATH" from the filters,
     //      skipping any filter that is empty or left on "All".
     //   2. Ask the backend for the matching courses.
     //   3. Save the answer in `results`, or show an error message.
     // `async` lets us use `await` to wait for the server without freezing
     // the page.
-    let total = $state(0);   // how many courses match in total
-    let page = $state(1);    // which page of results is loaded
-
     async function fetchCourses(pageNum) {
         const params = new URLSearchParams();
         if (search.trim()) params.set('q', search.trim());
@@ -114,48 +172,35 @@
         loading = false;
     }
 
+    // "Apply Filters" button: start again from page 1.
     function applyFilters() { fetchCourses(1); }
+    // "Load more" button: add the next page to the list.
     function loadMore() { fetchCourses(page + 1); }
 
-    
     // ===================================================================
     // SCHEDULE PLAN
     // ===================================================================
-    // courses: the courses the student has added to their plan (shown in
-    // the SchedulePlan sidebar). It is saved to localStorage further down.
-    let courses = $state([]);
-    
-    // This is functions for adding and removing courses from the schedule plan
     // "Add to Schedule Plan" button. [...courses, course] builds a new list
     // with the old courses plus the new one.
     function addToPlan(course) {
         courses = [...courses, course];
     }
+
     // true if this course is already in the plan (used to disable its
     // Add button so it can't be added twice).
     function inPlan(course) {
-    return courses.some(c => c.course_code === course.course_code);
+        return courses.some(c => c.course_code === course.course_code);
     }
+
     // Keeps every course except the one with this code. Called by the
     // remove button in the SchedulePlan sidebar.
     function removeFromPlan(courseCode) {
         courses = courses.filter(c => c.course_code !== courseCode);
     }
 
-
     // ===================================================================
     // EXCLUDING TIMES ON THE CALENDAR (CLICK AND DRAG)
     // ===================================================================
-    // excluded:   the cells the student has painted red, stored like
-    //             { "Monday-9:00AM": true }. Red means "don't schedule me here".
-    // dragging:   true while the mouse button is held down on the calendar.
-    // paintValue: what the current drag does: true = paint red, false = erase.
-    // dragging and paintValue are plain variables (not $state) because
-    // nothing on screen needs to re-draw when they change.
-    let excluded = $state({});
-    let dragging = false;
-    let paintValue = true;
-// This is the functions for the calendar drag 
     // Mouse pressed on a cell. If that cell was empty, this drag paints red;
     // if it was already red, this drag erases.
     function startDrag(day, hour) {
@@ -172,12 +217,12 @@
 
     // Mouse released anywhere on the page (see <svelte:window> in the markup).
     function stopDrag() {
-    dragging = false;
+        dragging = false;
     }
 
     // "Reset" button: clear every red cell.
     function resetAll() {
-    excluded = {};
+        excluded = {};
     }
 
     // "Exclude all" button: mark every cell (every day x every hour) red.
@@ -186,263 +231,183 @@
         for (const day of days) {
             for (const hour of hours) {
                 all[`${day}-${hour}`] = true;
+            }
         }
+        excluded = all;
     }
-    excluded = all;
-    }
-
 
     // ===================================================================
     // TURNING RED CELLS INTO TIME RANGES FOR THE SERVER
     // ===================================================================
-    // The server wants excluded times like { day: 'M', start: '09:00', end: '11:00' }.
-    // dayCode turns full day names into the short codes it expects.
-    const dayCode = { Monday: 'M', Tuesday: 'T', Wednesday: 'W', Thursday: 'Th', Friday: 'F' };
+    // Turns a row label into a 24-hour number: "9:00AM" -> 9, "1:00PM" -> 13.
+    // The regex pulls out the hour and AM/PM. % 12 turns 12 into 0, so
+    // "12:00PM" becomes 0 + 12 = 12.
+    function hourNumber(label) {
+        const [, h, , ap] = label.match(/(\d+):(\d+)(AM|PM)/);
+        return (Number(h) % 12) + (ap === 'PM' ? 12 : 0);
+    }
 
-// Turns a row label into a 24-hour number: "9:00AM" -> 9, "1:00PM" -> 13.
-// The regex pulls out the hour and AM/PM. % 12 turns 12 into 0, so
-// "12:00PM" becomes 0 + 12 = 12.
-function hourNumber(label) {
-    const [, h, , ap] = label.match(/(\d+):(\d+)(AM|PM)/);
-    return (Number(h) % 12) + (ap === 'PM' ? 12 : 0);
-}
+    // 9 -> "09:00" (the text format the server expects).
+    function fmt(n) {
+        return String(n).padStart(2, '0') + ':00';
+    }
 
-// 9 -> "09:00" (the text format the server expects).
-function fmt(n) {
-    return String(n).padStart(2, '0') + ':00';
-}
-
-// Walks down each day's column from top to bottom and merges runs of
-// red cells that touch into one range. So red at 9, 10 and 11 AM becomes
-// a single { start: "09:00", end: "12:00" } instead of three entries.
-function getExcludedTimes() {
-    const out = [];
-    for (const day of days) {
-        let start = null;
-        for (const hour of hours) {
-            const isRed = excluded[`${day}-${hour}`];
-            const n = hourNumber(hour);
-            // A red cell and no range open yet: start a new range here.
-            if (isRed && start === null) start = n;
-            // The first non-red cell after a run of red ones closes the range.
-            // If the run began in the top row (7 AM), it starts at 00:00, so
-            // classes earlier than the calendar shows are blocked too.
-            if (!isRed && start !== null) {
-                out.push({ day: dayCode[day], start: fmt(start < 8 ? 0 : start), end: fmt(n) });
-                start = null;
+    // Walks down each day's column from top to bottom and merges runs of
+    // red cells that touch into one range. So red at 9, 10 and 11 AM becomes
+    // a single { start: "09:00", end: "12:00" } instead of three entries.
+    function getExcludedTimes() {
+        const out = [];
+        for (const day of days) {
+            let start = null;
+            for (const hour of hours) {
+                const isRed = excluded[`${day}-${hour}`];
+                const n = hourNumber(hour);
+                // A red cell and no range open yet: start a new range here.
+                if (isRed && start === null) start = n;
+                // The first non-red cell after a run of red ones closes the range.
+                // If the run began in the top row (7 AM), it starts at 00:00, so
+                // classes earlier than the calendar shows are blocked too.
+                if (!isRed && start !== null) {
+                    out.push({ day: dayCode[day], start: fmt(start < 8 ? 0 : start), end: fmt(n) });
+                    start = null;
+                }
+            }
+            // The run went all the way to the bottom of the column, so close it
+            // at the end of the last row (the 8 PM row ends at 21:00).
+            if (start !== null) {
+                const last = hourNumber(hours[hours.length - 1]);
+                out.push({ day: dayCode[day], start: fmt(start < 8 ? 0 : start), end: fmt(last + 1) });
             }
         }
-        // The run went all the way to the bottom of the column, so close it
-        // at the end of the last row (the 8 PM row ends at 21:00).
-        if (start !== null) {
-            const last = hourNumber(hours[hours.length - 1]);
-            out.push({ day: dayCode[day], start: fmt(start < 8 ? 0 : start), end: fmt(last + 1) });
-        }
-    
-    }
-return out;
-}
-// ===================================================================
-// TURNING SERVER SECTIONS INTO CALENDAR BLOCKS
-// ===================================================================
-// The server describes each class section with text, like
-// meeting_days "MWF" and start_time "09:00". The helpers below turn
-// that into "blocks" the calendar grid knows how to draw.
-// Maps every day abbreviation the server might use to a full day name.
-// Different data spells Tuesday and Thursday in different ways.
-const dayMap = {
-    M: 'Monday', T: 'Tuesday', W: 'Wednesday', R: 'Thursday', F: 'Friday',
-    Tu: 'Tuesday', Th: 'Thursday', Tr: 'Thursday'
-};
-
-// "M W F", "MWF", "T Tr", "TR", "TuTh"  ->  list of day names
-// Splits the text on spaces, then pulls out each day code. The two-letter
-// codes (Tu, Th, Tr) come first in the regex so "Th" isn't read as "T".
-// new Set(...) removes any duplicates.
-function toDays(meetingDays) {
-    const out = [];
-    for (const token of meetingDays.split(/\s+/).filter(Boolean)) {
-        for (const part of token.match(/Tu|Th|Tr|[MTWRF]/g) || []) {
-            out.push(dayMap[part]);
-        }
-    }
-    return [...new Set(out)];
-}
-
-// "14:20" -> 14.333
-// A plain number is easy to do math with when placing and sizing blocks.
-function toHours(t) {
-    const [h, m] = t.split(':').map(Number);
-    return h + m / 60;
-}
-
-// "14:20" -> "2:20 PM"
-// `h % 12 || 12` turns both 0 and 12 into 12 (for 12 AM and 12 PM).
-function fmtClock(t) {
-    const [h, m] = t.split(':').map(Number);
-    return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
-}
-
-// one section can meet on several days, so it makes one block per day
-function sectionToBlocks(s) {
-    return toDays(s.meeting_days).map(day => ({
-        code: s.course_code,
-        name: s.course_name,
-        day,
-        start: toHours(s.start_time),
-        end: toHours(s.end_time),
-        time: `${fmtClock(s.start_time)} – ${fmtClock(s.end_time)}`,
-        room: s.section_location,
-        instructor: s.instructor_name
-    }));
-}
-
-// ===================================================================
-// GENERATED SCHEDULES
-// ===================================================================
-// schedules:  every schedule the server came up with. Each one is a
-//             combination of sections whose times don't clash.
-// current:    which schedule is being shown (0 = the first one).
-// problems:   messages shown above the calendar (e.g. a course that
-//             couldn't fit).
-// generating: true while waiting for the server.
-let schedules = $state([]);
-let current = $state(0);
-let problems = $state([]);
-let generating = $state(false);
-
-// $derived(...) values recalculate automatically when the things they use
-// change, so switching `current` updates all three of these.
-// currentSchedule: the schedule being shown (or null if there are none).
-// schedule:        its in-person sections, turned into calendar blocks.
-// onlineSections:  its online sections. They have no meeting time, so
-//                  they are listed under the calendar instead of on it.
-let currentSchedule = $derived(schedules[current] ?? null);
-let schedule = $derived(currentSchedule ? currentSchedule.calendar.flatMap(sectionToBlocks) : []);
-let onlineSections = $derived(currentSchedule ? currentSchedule.online : []);
-
-// ">" button. % wraps around: after the last schedule, go back to the first.
-function nextSchedule() {
-    if (schedules.length) current = (current + 1) % schedules.length;
-}
-
-// "<" button. Adding schedules.length before % stops the number going
-// negative, so going back from the first schedule lands on the last.
-function prevSchedule() {
-    if (schedules.length) current = (current - 1 + schedules.length) % schedules.length;
-}
-
-// These two are plain variables (not $state) on purpose: changing them
-// shouldn't re-draw anything or re-run the $effect further down.
-let hasGenerated = false;   // plain variable: true after the first Generate
-let requestId = 0;          // plain variable: numbers each request
-
-// Sends the plan's course codes and the red (excluded) times to the
-// server, which sends back every schedule that fits. Called by the
-// "Generate" button in the SchedulePlan sidebar, and automatically by
-// the $effect below after the plan or the red cells change.
-async function generateSchedules() {
-    // Nothing to schedule yet: show a hint and stop here.
-    if (courses.length === 0) {
-        problems = ['Add at least one course to the plan first.'];
-        return;
+        return out;
     }
 
-    hasGenerated = true;
-    const myId = ++requestId;       // this request's number
-    generating = true;
-    problems = [];
-
-    try {
-        // POST sends data in the request body. JSON.stringify turns the
-        // JavaScript object into text the server can read.
-        const res = await fetch('/api/schedules/generate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                course_codes: courses.map(c => c.course_code),
-                excluded_times: getExcludedTimes()
-            })
-        });
-        const data = await res.json();
-
-        // A newer request has started since this one, so ignore this answer.
-        if (myId !== requestId) return;
-
-        if (res.ok) {
-            // Success: keep the schedules and show the first one.
-            schedules = data.schedules;
-            problems = data.problems;
-            current = 0;
-        } else {
-            // The server answered with an error message.
-            schedules = [];
-            problems = [data.error];
-        }
-    } catch {
-        // The request failed completely (server down, no internet).
-        // Again, ignore it if a newer request has started.
-        if (myId !== requestId) return;
-        schedules = [];
-        problems = ['Could not reach the server'];
-    }
-
-    generating = false;
-}
-
-// ===================================================================
-// AUTO-REGENERATE
-// ===================================================================
-// After the student has pressed Generate once, keep the schedules up to
-// date by themselves whenever the plan or the red cells change.
-// regenTimer holds the id of the waiting setTimeout so it can be cancelled.
-let regenTimer;
-
-// $effect runs once at the start, then again whenever a reactive value it
-// reads changes. The function it returns (the "cleanup") runs before the
-// next run, cancelling any timer that hasn't fired yet.
-$effect(() => {
-    // Reading these two makes Svelte watch them.
-    JSON.stringify(excluded);
-    courses.map(c => c.course_code);
-
-    // Don't run until the student has pressed Generate once.
-    if (!hasGenerated) return;
-
-    // Wait 400 ms after the last change, so dragging across many cells
-    // sends one request instead of dozens.
-    clearTimeout(regenTimer);
-    regenTimer = setTimeout(() => {
-        if (courses.length === 0) {
-            requestId++;            // cancel any request still on its way
-            schedules = [];
-            problems = [];
-            generating = false;
-        } else {
-            generateSchedules();
-        }
-    }, 400);
-
-    return () => clearTimeout(regenTimer);
-});
     // ===================================================================
-    // CALENDAR DRAWING HELPERS
+    // TURNING SERVER SECTIONS INTO CALENDAR BLOCKS
     // ===================================================================
+    // The server describes each class section with text, like
+    // meeting_days "MWF" and start_time "09:00". The helpers below turn
+    // that into "blocks" the calendar grid knows how to draw.
+
+    // "M W F", "MWF", "T Tr", "TR", "TuTh"  ->  list of day names
+    // Splits the text on spaces, then pulls out each day code. The two-letter
+    // codes (Tu, Th, Tr) come first in the regex so "Th" isn't read as "T".
+    // new Set(...) removes any duplicates.
+    function toDays(meetingDays) {
+        const out = [];
+        for (const token of meetingDays.split(/\s+/).filter(Boolean)) {
+            for (const part of token.match(/Tu|Th|Tr|[MTWRF]/g) || []) {
+                out.push(dayMap[part]);
+            }
+        }
+        return [...new Set(out)];
+    }
+
+    // "14:20" -> 14.333
+    // A plain number is easy to do math with when placing and sizing blocks.
+    function toHours(t) {
+        const [h, m] = t.split(':').map(Number);
+        return h + m / 60;
+    }
+
+    // "14:20" -> "2:20 PM"
+    // `h % 12 || 12` turns both 0 and 12 into 12 (for 12 AM and 12 PM).
+    function fmtClock(t) {
+        const [h, m] = t.split(':').map(Number);
+        return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h >= 12 ? 'PM' : 'AM'}`;
+    }
+
+    // One section can meet on several days, so it makes one block per day.
+    function sectionToBlocks(s) {
+        return toDays(s.meeting_days).map(day => ({
+            code: s.course_code,
+            name: s.course_name,
+            day,
+            start: toHours(s.start_time),
+            end: toHours(s.end_time),
+            time: `${fmtClock(s.start_time)} – ${fmtClock(s.end_time)}`,
+            room: s.section_location,
+            instructor: s.instructor_name
+        }));
+    }
+
     // Returns the class blocks that START during this hour on this day.
     // Each block is drawn inside the cell where it starts, then moved and
     // stretched with CSS (top/height) to match its real start and end times.
     function blocksAt(day, hour) {
         return schedule.filter(b => b.day === day && Math.floor(b.start) === hourNumber(hour));
     }
+
+    // ===================================================================
+    // GENERATING SCHEDULES
+    // ===================================================================
+    // ">" button. % wraps around: after the last schedule, go back to the first.
+    function nextSchedule() {
+        if (schedules.length) current = (current + 1) % schedules.length;
+    }
+
+    // "<" button. Adding schedules.length before % stops the number going
+    // negative, so going back from the first schedule lands on the last.
+    function prevSchedule() {
+        if (schedules.length) current = (current - 1 + schedules.length) % schedules.length;
+    }
+
+    // Sends the plan's course codes and the red (excluded) times to the
+    // server, which sends back every schedule that fits. Called by the
+    // "Generate" button in the SchedulePlan sidebar, and automatically by
+    // the auto-regenerate $effect after the plan or the red cells change.
+    async function generateSchedules() {
+        // Nothing to schedule yet: show a hint and stop here.
+        if (courses.length === 0) {
+            problems = ['Add at least one course to the plan first.'];
+            return;
+        }
+
+        hasGenerated = true;
+        const myId = ++requestId;       // this request's number
+        generating = true;
+        problems = [];
+
+        try {
+            // POST sends data in the request body. JSON.stringify turns the
+            // JavaScript object into text the server can read.
+            const res = await fetch('/api/schedules/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    course_codes: courses.map(c => c.course_code),
+                    excluded_times: getExcludedTimes()
+                })
+            });
+            const data = await res.json();
+
+            // A newer request has started since this one, so ignore this answer.
+            if (myId !== requestId) return;
+
+            if (res.ok) {
+                // Success: keep the schedules and show the first one.
+                schedules = data.schedules;
+                problems = data.problems;
+                current = 0;
+            } else {
+                // The server answered with an error message.
+                schedules = [];
+                problems = [data.error];
+            }
+        } catch {
+            // The request failed completely (server down, no internet).
+            // Again, ignore it if a newer request has started.
+            if (myId !== requestId) return;
+            schedules = [];
+            problems = ['Could not reach the server'];
+        }
+
+        generating = false;
+    }
+
     // ===================================================================
     // FAVORITES
     // ===================================================================
-    // favorites:  schedules saved with the "Favorite" button. Each one
-    //             looks like { key, name, schedule }.
-    // favCounter: used to name them Schedule1, Schedule2, ...
-    let favorites = $state([]);
-    let favCounter = 1;
-
     // Saves the schedule being shown. Its key is its section numbers (CRNs)
     // joined together, e.g. "12345,23456", so the same schedule can't be
     // saved twice.
@@ -463,20 +428,21 @@ $effect(() => {
         schedules = [fav.schedule];
         current = 0;
     }
-    // ===================================================================
-    // SAVE AND LOAD (localStorage)
-    // ===================================================================
-    // localStorage is a small storage area in the browser that survives page
-    // refreshes. It remembers the plan, the red cells and the favorites.
-    // It can only store text, so JSON.stringify saves and JSON.parse loads.
-    // loaded stays false until the saved data has been read, so the effect
-    // below doesn't overwrite it with empty values first.
-    let loaded = false;
 
-    // runs once, when the page opens in the browser
-    // (onMount matters here: SvelteKit also builds the page on the server,
-    // where localStorage doesn't exist. onMount only runs in the browser.)
-    onMount(() => {
+    // ===================================================================
+    // RUNS WHEN THE PAGE OPENS
+    // ===================================================================
+    // onMount runs once, when the page opens in the browser. (It matters
+    // here: SvelteKit also builds the page on the server, where
+    // localStorage doesn't exist. onMount only runs in the browser.)
+    onMount(async () => {
+        // 1. Run a search with the default filters (everything set to "All")
+        //    so the results list isn't empty. Not awaited, so it runs
+        //    alongside the steps below.
+        applyFilters();
+
+        // 2. Load the saved plan, red cells and favorites. localStorage can
+        //    only store text, so JSON.parse turns it back into data.
         const savedPlan = localStorage.getItem('plan');
         if (savedPlan) courses = JSON.parse(savedPlan);
 
@@ -487,9 +453,52 @@ $effect(() => {
         if (savedFavorites) favorites = JSON.parse(savedFavorites);
 
         loaded = true;
+
+        // 3. Load the real dropdown values. If this fails, the dropdowns
+        //    just show "All".
+        try {
+            const res = await fetch('/api/filters');
+            if (res.ok) filterOptions = await res.json();
+        } catch {}
     });
 
-    // runs again whenever any of the three changes
+    // ===================================================================
+    // EFFECTS
+    // ===================================================================
+    // $effect runs once at the start, then again whenever a reactive value
+    // it reads changes.
+
+    // Auto-regenerate: after the student has pressed Generate once, keep the
+    // schedules up to date by themselves whenever the plan or the red cells
+    // change. The function it returns (the "cleanup") runs before the next
+    // run, cancelling any timer that hasn't fired yet.
+    $effect(() => {
+        // Reading these two makes Svelte watch them.
+        JSON.stringify(excluded);
+        courses.map(c => c.course_code);
+
+        // Don't run until the student has pressed Generate once.
+        if (!hasGenerated) return;
+
+        // Wait 400 ms after the last change, so dragging across many cells
+        // sends one request instead of dozens.
+        clearTimeout(regenTimer);
+        regenTimer = setTimeout(() => {
+            if (courses.length === 0) {
+                requestId++;            // cancel any request still on its way
+                schedules = [];
+                problems = [];
+                generating = false;
+            } else {
+                generateSchedules();
+            }
+        }, 400);
+
+        return () => clearTimeout(regenTimer);
+    });
+
+    // Save the plan, the red cells and the favorites whenever any of them
+    // changes.
     $effect(() => {
         const planText = JSON.stringify(courses);
         const excludedText = JSON.stringify(excluded);
