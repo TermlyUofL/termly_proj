@@ -337,6 +337,10 @@
     .btn-red:hover { background: #a31f1f; }
     .btn-red:disabled { background: #9ca3af; cursor: default; }
 
+    .desc {
+    white-space: pre-line;
+    }
+
 /* =============================================================== */
 /* RESPONSIVE (keep last)                                        */
 /* =============================================================== */

@@ -110,7 +110,7 @@ export const subjects = [
   { code: 'MSPC', name: 'Metroversity-Spalding University' },
   { code: 'MBIO', name: 'Microbiology & Immunology' },
   { code: 'MILS', name: 'Military Science' },
-  { code: 'M L', name: 'Modern Languages' },
+  { code: 'M', name: 'Modern Languages' },
   { code: 'MUS', name: 'Music' },
   { code: 'MUSA', name: 'Music Applied' },
   { code: 'MUED', name: 'Music Education' },

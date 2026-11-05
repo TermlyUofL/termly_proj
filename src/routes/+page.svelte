@@ -43,10 +43,27 @@
     let mode = $state('All');
     let career = $state('All');
     let prereq = $state(false);
+
+    // the real dropdown values, loaded from the backend
+    let filterOptions = $state({ subjects: [], sessions: [], modes_of_instruction: [], careers: [] });
+
+    // subject codes from the backend, with names from subjects.js where we know them
+    let subjectOptions = $derived(
+        filterOptions.subjects.map(code => {
+            const known = subjects.find(s => s.code === code);
+            return { code, name: known ? known.name : code };
+        })
+    );
+
+    onMount(async () => {
+        try {
+            const res = await fetch('/api/filters');
+            if (res.ok) filterOptions = await res.json();
+        } catch {
+            // if this fails, the dropdowns just show "All"
+        }
+    });
     
-    //function applyFilters() {
-       // console.log({ q: search, subject, session, mode, career, prereq });
-    //}
     // results:  the courses the server sent back for the current filters.
     // loading:  true while waiting for the server (shows "Searching...").
     // errorMsg: a message to show if the search failed.
@@ -56,7 +73,7 @@
 
     
     
-    // Thsi is function for applying the search filters and fetching the results from the API
+    // This is function for applying the search filters and fetching the results from the API
     // How it works:
     //   1. Build a query string like "q=calc&subject=MATH" from the filters,
     //      skipping any filter that is empty or left on "All".
@@ -64,36 +81,42 @@
     //   3. Save the answer in `results`, or show an error message.
     // `async` lets us use `await` to wait for the server without freezing
     // the page.
-    async function applyFilters() {
-    const params = new URLSearchParams();
-    if (search.trim()) params.set('q', search.trim());
-    if (subject !== 'All') params.set('subject', subject);
-    if (session !== 'All') params.set('session', session);
-    if (mode !== 'All') params.set('mode', mode);
-    if (career !== 'All') params.set('career', career);
-    if (prereq) params.set('has_prereq', 'yes');          // changed
+    let total = $state(0);   // how many courses match in total
+    let page = $state(1);    // which page of results is loaded
 
-    // Show "Searching..." and clear any old error message.
-    loading = true;
-    errorMsg = '';
-    // This is the fetch request to the API to get the courses based on the filters
-    try {
-        const res = await fetch(`/api/courses?${params}`);
-        const data = await res.json();
-        // res.ok is true when the server answered with a success status.
-        if (res.ok) {
-            results = data.courses;                        // changed
-        } else {
-            errorMsg = data.error;
-            results = [];
+    async function fetchCourses(pageNum) {
+        const params = new URLSearchParams();
+        if (search.trim()) params.set('q', search.trim());
+        if (subject !== 'All') params.set('subject', subject);
+        if (session !== 'All') params.set('session', session);
+        if (mode !== 'All') params.set('mode', mode);
+        if (career !== 'All') params.set('career', career);
+        if (prereq) params.set('has_prereq', 'yes');
+        params.set('page', pageNum);
+        params.set('per_page', 50);
+
+        loading = true;
+        errorMsg = '';
+        try {
+            const res = await fetch(`/api/courses?${params}`);
+            const data = await res.json();
+            if (res.ok) {
+                // page 1 replaces the list, later pages add to it
+                results = pageNum === 1 ? data.courses : [...results, ...data.courses];
+                total = data.total;
+                page = data.page;
+            } else {
+                errorMsg = data.error;
+                results = [];
+            }
+        } catch {
+            errorMsg = 'Could not reach the server';
         }
-    } catch {
-        // The request itself failed (e.g. server not running, no internet).
-        errorMsg = 'Could not reach the server';
+        loading = false;
     }
-    // Finished either way, so hide "Searching...".
-    loading = false;
-}
+
+    function applyFilters() { fetchCourses(1); }
+    function loadMore() { fetchCourses(page + 1); }
 
     
     // ===================================================================
@@ -573,8 +596,8 @@ $effect(() => {
                 >
                     <p class="block_title">{b.code} – {b.name}</p>
                     <p class="block_info">{b.time}</p>
-                    <p class="block_info">{b.room}</p>
-                    <p class="block_info">{b.instructor}</p>
+                    {#if b.room}<p class="block_info">{b.room}</p>{/if}
+                    {#if b.instructor}<p class="block_info">{b.instructor}</p>{/if}
                 </div>
             {/each}
         </div>
@@ -606,40 +629,39 @@ $effect(() => {
  <!-- Each control is bound (bind:value / bind:checked) to a variable in the script, which updates as you type or choose. -->
  <input type="text" placeholder="Search courses..." bind:value={search} />
 
- <!-- Subject options come from $lib/subjects.js. -->
  <label>Subject:
   <select bind:value={subject}>
     <option value="All">All</option>
-    {#each subjects as s}
-      <option value={s.code}>{s.name} ({s.code})</option>
+    {#each subjectOptions as s}
+      <option value={s.code}>{s.name === s.code ? s.code : `${s.name} (${s.code})`}</option>
     {/each}
   </select>
- </label>
+</label>
 
- <label>Session:
+<label>Session:
   <select bind:value={session}>
     <option value="All">All</option>
-    <option value="First Half">First Half</option>
-    <option value="Second Half">Second Half</option>
-    <option value="Regular Full">Regular Full</option>
-    <option value="Special">Special</option>
+    {#each filterOptions.sessions as s}
+      <option value={s}>{s}</option>
+    {/each}
   </select>
 </label>
 
-  <label>Mode:
+<label>Mode:
   <select bind:value={mode}>
     <option value="All">All</option>
-    <option value="In Person">In Person</option>
-    <option value="Online Asynchronous">Online Asynchronous</option>
-    <option value="Online Synchronous">Online Synchronous</option>
+    {#each filterOptions.modes_of_instruction as m}
+      <option value={m}>{m}</option>
+    {/each}
   </select>
 </label>
 
-  <label>Career:
+<label>Career:
   <select bind:value={career}>
     <option value="All">All</option>
-    <option value="Undergraduate">Undergraduate</option>
-    <option value="Graduate">Graduate</option>
+    {#each filterOptions.careers as c}
+      <option value={c}>{c}</option>
+    {/each}
   </select>
 </label>
 
@@ -654,6 +676,13 @@ $effect(() => {
 <!-- This is the section for the search results -->
 <section class="results">
   <h3>Course Search Results</h3>
+  <p class="hint">Showing {results.length} of {total} courses</p>
+
+    <!-- the cards loop stays as it is -->
+
+    {#if results.length < total}
+        <button class="btn-red" onclick={loadMore} disabled={loading}>Load more</button>
+    {/if}
   <p class="hint">Click on class name to see details about class</p>
 
   <!-- Status message: searching, an error, or nothing found. -->
@@ -662,6 +691,7 @@ $effect(() => {
   {:else if errorMsg}
     <p class="hint">{errorMsg}</p>
   {:else if results.length === 0}
+
     <p>No courses found.</p>
   {/if}
 
@@ -1179,6 +1209,7 @@ $effect(() => {
         font-weight: 700;
         font-size: 0.85rem;
     }
+    
 
 /* =============================================================== */
 /* RESPONSIVE (keep last)                                        */
