@@ -100,9 +100,14 @@
     // ---- Favorites ----
     // favorites:  schedules saved with the "Favorite" button. Each one
     //             looks like { key, name, schedule }.
-    // favCounter: used to name them Schedule1, Schedule2, ...
     let favorites = $state([]);
+    
     let favCounter = 1;
+
+    function nextFavoriteName() {
+    const used = favorites.map(f => Number(f.name.replace('Schedule', '')) || 0);
+    return `Schedule${Math.max(0, ...used) + 1}`;
+}
 
     // ---- Saving ----
     // loaded stays false until the saved data has been read, so the save
@@ -415,7 +420,7 @@
         if (!currentSchedule) return;
         const key = currentSchedule.crns.join(',');
         if (favorites.some(f => f.key === key)) return;    // already saved
-        favorites = [...favorites, { key, name: `Schedule${favCounter++}`, schedule: currentSchedule }];
+        favorites = [...favorites, { key, name: nextFavoriteName(), schedule: currentSchedule }];
     }
 
     // The ⊗ button next to a favorite.
@@ -661,7 +666,8 @@
 <!-- This is the section for the search results -->
 <section class="results">
   <h3>Course Search Results</h3>
-  <p class="hint">Showing {results.length} of {total} courses</p>
+  <p class=
+  "hint">Showing {results.length} of {total} courses</p>
   <p class="hint">Click on class name to see details about class</p>
 
   <!-- Status message: searching, an error, or nothing found. -->
