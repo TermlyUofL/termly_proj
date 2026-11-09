@@ -186,22 +186,26 @@
 
                 <!-- One row per section: days and times (or "Does Not Meet" for sections with no set time), instructor, location, and an Open/Full badge. -->
                 {#each course.sections as s}
-                    <div class="time_row">
-                        <div>
-                            <p class="time_title">
-                                {#if s.meeting_days}
-                                    {dayLabel(s.meeting_days)} - {fmtClock(s.start_time)} - {fmtClock(s.end_time)}
-                                {:else}
-                                    Does Not Meet
-                                {/if}
-                            </p>
-                            <p class="time_info">Instructor(s): {s.instructor_name || 'TBA'}</p>
-                            <p class="time_info">Location: {s.section_location || 'TBA'}</p>
-                        </div>
-                        <!-- class:full adds the "full" class (red badge) when the section is Full. -->
-                        <span class="badge" class:full={s.status === 'Full'}>{s.status}</span>
+                <div class="time_row">
+                    <div>
+                        <p class="time_title">
+                            {#if s.meeting_days}
+                                {dayLabel(s.meeting_days)} - {fmtClock(s.start_time)} - {fmtClock(s.end_time)}
+                            {:else}
+                                Does Not Meet
+                            {/if}
+                        </p>
+                        <p class="time_info">Instructor(s): {s.instructor_name || 'TBA'}</p>
+                        {#if s.section_location}
+                            <p class="time_info">Campus: {s.section_location}</p>
+                        {:else if s.instruction_mode?.startsWith('Online')}
+                            <p class="time_info">Campus: Online</p>
+                        {/if}
                     </div>
-                {/each}
+                    <!-- class:full adds the "full" class (red badge) when the section is Full. -->
+                    <span class="badge" class:full={s.status === 'Full'}>{s.status}</span>
+                </div>
+            {/each}
             </div>
         {/if}
     </section>
