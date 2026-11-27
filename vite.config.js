@@ -19,10 +19,10 @@ export default defineConfig({
 				mode: 'auto',
 				directives: {
 					'default-src': ['self'],
-					'script-src': ['self'],
+					'script-src': ['self', 'https://static.cloudflareinsights.com'],
 					'style-src': ['self', 'unsafe-inline'],
 					'img-src': ['self', 'data:'],
-					'connect-src': ['self'],
+					'connect-src': ['self', 'https://cloudflareinsights.com'],
 					'object-src': ['none'],
 					'base-uri': ['self'],
 					'form-action': ['self'],
