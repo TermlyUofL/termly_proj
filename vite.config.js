@@ -12,7 +12,24 @@ export default defineConfig({
 			},
 
 			// Static SPA build served by nginx (see Dockerfile); nginx proxies /api to the backend.
-			adapter: adapter({ fallback: '200.html' })
+			adapter: adapter({ fallback: '200.html' }),
+
+			// Content Security Policy
+			csp: {
+				mode: 'auto',
+				directives: {
+					'default-src': ['self'],
+					'script-src': ['self'],
+					'style-src': ['self', 'unsafe-inline'],
+					'img-src': ['self', 'data:'],
+					'connect-src': ['self'],
+					'object-src': ['none'],
+					'base-uri': ['self'],
+					'form-action': ['self'],
+					'frame-ancestors': ['none'],
+					'upgrade-insecure-requests': true
+				}
+			}
 		})
 	],
 	server: {
